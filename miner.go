@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
-	"github.com/niftynei/glightning/gbitcoin"
+	"github.com/elementsproject/glightning/gbitcoin"
+	"github.com/elementsproject/glightning/gelements"
 )
 
 type Miner struct {
@@ -30,6 +32,7 @@ type Miner struct {
 
 type minerRuntime struct {
 	rpc      *gbitcoin.Bitcoin
+	elem     *gelements.Elements
 	cmd      *exec.Cmd
 	cleanups []*Cleanup
 }
@@ -134,6 +137,12 @@ func (m *Miner) Start() {
 	})
 	log.Printf("miner: bitcoind started (%d)!", cmd.Process.Pid)
 
+	elem := gelements.NewElements(m.rpcUser, m.rpcPass)
+	elem.SetTimeout(uint(2))
+	log.Printf("miner: Starting up elements client")
+	elem.StartUp("http://localhost", uint(m.rpcPort))
+	time.Sleep(2 * time.Second)
+
 	rpc := gbitcoin.NewBitcoin(m.rpcUser, m.rpcPass)
 	rpc.SetTimeout(uint(2))
 
@@ -141,6 +150,7 @@ func (m *Miner) Start() {
 	rpc.StartUp("http://localhost", m.dir, uint(m.rpcPort))
 	m.runtime = &minerRuntime{
 		rpc:      rpc,
+		elem:     elem,
 		cmd:      cmd,
 		cleanups: cleanups,
 	}
@@ -156,13 +166,9 @@ func (m *Miner) Start() {
 }
 
 func (m *Miner) initializeFirstRun() error {
-	l := true
-	d := false
-	_, err := m.runtime.rpc.CreateWallet(&gbitcoin.CreateWalletRequest{
-		WalletName:    "default",
-		LoadOnStartup: &l,
-		Descriptors:   &d,
-	})
+	// HACK - for some reason glightning's bitcoind does have
+	// the CreateWallet method, so use the elements client
+	_, err := m.runtime.elem.CreateWallet("default")
 	if err != nil {
 		log.Printf("miner: Create wallet failed. Ignoring error: %v", err)
 	}
